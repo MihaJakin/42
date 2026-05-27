@@ -205,8 +205,21 @@ function paceRangeStr(range) {
   return `${paceStr(range.min)} – ${paceStr(range.max)}`;
 }
 
-function hrRangeStr(zoneKey, maxHr) {
+// HR range — če imaš customZones { z1Max, z2Max, z3Max, z4Max }, uporabi njih
+// (lower bound je top prejšnje cone + 1). Drugače fall-back na % MaxHR.
+function hrRangeStr(zoneKey, maxHr, customZones = null) {
   if (!zoneKey) return "—";
+  if (customZones && customZones.z2Max && customZones.z3Max && customZones.z4Max) {
+    const ranges = {
+      z1: [Math.round(maxHr * 0.50), customZones.z1Max || customZones.z2Max - 10],
+      z2: [(customZones.z1Max || (customZones.z2Max - 10)) + 1, customZones.z2Max],
+      z3: [customZones.z2Max + 1, customZones.z3Max],
+      z4: [customZones.z3Max + 1, customZones.z4Max],
+      z5: [customZones.z4Max + 1, maxHr],
+    };
+    const [lo, hi] = ranges[zoneKey];
+    return `${lo} – ${hi} bpm (${zoneKey.toUpperCase()})`;
+  }
   const [lo, hi] = DEFAULT_HR.zones[zoneKey];
   return `${Math.round(lo * maxHr)} – ${Math.round(hi * maxHr)} bpm (${zoneKey.toUpperCase()})`;
 }

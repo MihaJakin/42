@@ -74,6 +74,24 @@
             <input type="text" id="setSlowestPace" placeholder="5:40" />
             <span class="hint">Easy/recovery/long teki ne bodo predlagani počasneje od tega.</span>
           </label>
+          <hr/>
+          <p class="hint" style="margin-top:0">HR cone (zgornje meje v bpm). Pusti prazno za avto-izračun iz Max HR.</p>
+          <div class="row">
+            <label>Z1 max (recovery)
+              <input type="number" id="setZ1Max" min="80" max="220" placeholder="auto" />
+            </label>
+            <label>Z2 max (easy)
+              <input type="number" id="setZ2Max" min="80" max="220" placeholder="auto" />
+            </label>
+          </div>
+          <div class="row">
+            <label>Z3 max (tempo)
+              <input type="number" id="setZ3Max" min="80" max="220" placeholder="auto" />
+            </label>
+            <label>Z4 max (threshold)
+              <input type="number" id="setZ4Max" min="80" max="220" placeholder="auto" />
+            </label>
+          </div>
           <button class="btn primary" id="saveProfile">Shrani profil</button>
         </div>
 

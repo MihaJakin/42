@@ -1,5 +1,5 @@
 // Service worker — offline cache
-const CACHE = "marathon-pwa-v7";
+const CACHE = "marathon-pwa-v8";
 const ASSETS = [
   "./",
   "./index.html",

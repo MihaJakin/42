@@ -121,6 +121,7 @@ async function loadSettings() {
   const goalSec = await Store.getSetting("goalTimeSec", 14400);
   state.goalTimeSec = goalSec;
   state.slowestPace = await Store.getSetting("slowestPace", 340); // 5:40/km default
+  state.hrZones = await Store.getSetting("hrZones", null); // {z1Max, z2Max, z3Max, z4Max} ali null
 
   // Privzeto: pace cilji iz CILJA maratona (sub-4:00 → MP 5:41/km)
   // Easy pace anchored na goal MP zagotavlja, da uporabnik dejansko teče easy.
@@ -302,7 +303,7 @@ async function renderWeek() {
     const planPace = PLAN.paceRangeStr(s.plannedPace);
     const planDur = fmtDuration(s.plannedDurationSec);
     const hrZone = s.plannedHrZone
-      ? PLAN.hrRangeStr(s.plannedHrZone, state.maxHr)
+      ? PLAN.hrRangeStr(s.plannedHrZone, state.maxHr, state.hrZones)
       : "";
 
     let actualHtml = "";
@@ -466,7 +467,7 @@ function renderPlan() {
         return `<span class="mini" style="background:${t.color}">${t.label.split(" ")[0]} ${s.km}k</span>`;
       });
       html += `
-        <div class="${cls}">
+        <div class="${cls}" data-week="${wk.week}" role="button" tabindex="0">
           <span class="week-num">W${wk.week}</span>
           <span class="week-km">${wk.weekKm} km</span>
           <span class="week-sess">${sessionsArr.join("")}</span>
@@ -475,6 +476,21 @@ function renderPlan() {
     block.innerHTML = html;
     container.appendChild(block);
   }
+
+  // Bind clicks: skoči na izbran teden
+  container.querySelectorAll(".week-row[data-week]").forEach(row => {
+    row.addEventListener("click", () => {
+      state.currentWeek = parseInt(row.dataset.week);
+      // Preklopi na Teden zavihek
+      $$(".tab").forEach(x => x.classList.remove("active"));
+      $$(".tab-panel").forEach(x => x.classList.remove("active"));
+      $('[data-tab="week"]').classList.add("active");
+      $('.tab-panel[data-panel="week"]').classList.add("active");
+      $("#addRunBtn").style.display = "flex";
+      renderWeek();
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    });
+  });
 }
 
 // === STATS ===
@@ -483,13 +499,21 @@ async function renderStats() {
   const completed = await Store.getAll("completed");
   const history = await Store.getAll("history");
 
+  // Validni completed = ne preskočeni IN ima km > 0 (rescheduled imajo km=0)
+  const validCompleted = completed.filter(c => !c.skipped && c.km > 0);
+
+  // Dedup: če history zapis ima isti datum kot completed zapis, preferiraj completed
+  // (completed je vir resnice; history je le seed za auto-link)
+  const completedDates = new Set(validCompleted.map(c => c.date));
+  const historyOnly = history.filter(h => !completedDates.has(h.date));
+
   const allRuns = [
-    ...history.map(h => ({ date: h.date, km: h.km, durationSec: h.durationSec, avgHr: h.avgHr, source: "apple" })),
-    ...completed.filter(c => !c.skipped).map(c => ({ date: c.date, km: c.km, durationSec: c.durationSec, avgHr: c.avgHr, source: "app" })),
+    ...historyOnly.map(h => ({ date: h.date, km: h.km, durationSec: h.durationSec, avgHr: h.avgHr, source: "apple" })),
+    ...validCompleted.map(c => ({ date: c.date, km: c.km, durationSec: c.durationSec, avgHr: c.avgHr, source: "app" })),
   ].sort((a, b) => a.date.localeCompare(b.date));
 
   if (allRuns.length === 0) {
-    container.innerHTML = '<div class="empty-state"><h3>Še ni zgodovine</h3><p>Naloži seed iz Apple Health ali vpiši prve treninge.</p></div>';
+    container.innerHTML = '<div class="empty-state"><h3>Še ni zgodovine</h3><p>Vpiši prvi trening na Teden zavihku ali naloži seed iz Apple Health (Settings → Backup → Naloži seed).</p></div>';
     return;
   }
 
@@ -542,12 +566,14 @@ async function renderStats() {
 }
 
 function isoWeekKey(dateStr) {
-  const d = new Date(dateStr + "T00:00:00");
-  // ISO week: copy date, set to nearest Thursday
-  d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));
-  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
-  const wk = Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
-  return `${d.getUTCFullYear()}-W${String(wk).padStart(2, "0")}`;
+  // Parsiraj kot UTC midnight da se izognemo timezone bugu (CEST sicer naredi
+  // Mon → Sun in pomakne v prejšnji ISO teden).
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  dt.setUTCDate(dt.getUTCDate() + 4 - (dt.getUTCDay() || 7));
+  const yearStart = new Date(Date.UTC(dt.getUTCFullYear(), 0, 1));
+  const wk = Math.ceil((((dt - yearStart) / 86400000) + 1) / 7);
+  return `${dt.getUTCFullYear()}-W${String(wk).padStart(2, "0")}`;
 }
 
 // === SETTINGS ===
@@ -555,6 +581,10 @@ async function renderSettings() {
   $("#setMaxHr").value = state.maxHr;
   $("#setGoalTime").value = fmtDuration(state.goalTimeSec);
   $("#setSlowestPace").value = fmtPace(state.slowestPace).replace("/km", "");
+  $("#setZ1Max").value = state.hrZones?.z1Max || "";
+  $("#setZ2Max").value = state.hrZones?.z2Max || "";
+  $("#setZ3Max").value = state.hrZones?.z3Max || "";
+  $("#setZ4Max").value = state.hrZones?.z4Max || "";
 
   // Sync nastavitve
   const pat = await Store.getSetting("gistPat", "");
@@ -622,13 +652,13 @@ function openLogModal(session, adhocRun = null) {
 
     const p = $("#modalPlanned");
     const watchPlan = PLAN.generateWatchPlan(session, state.paces);
-    const watchStepsHtml = renderWatchSteps(watchPlan, state.paces, state.maxHr);
+    const watchStepsHtml = renderWatchSteps(watchPlan, state.paces, state.maxHr, state.hrZones);
 
     p.innerHTML = `
       <div class="row"><span class="lbl">Plan razdalja</span><span class="val">${session.km} km</span></div>
       <div class="row"><span class="lbl">Plan pace</span><span class="val">${PLAN.paceRangeStr(session.plannedPace)}</span></div>
       <div class="row"><span class="lbl">Plan trajanje</span><span class="val">${fmtDuration(session.plannedDurationSec)}</span></div>
-      <div class="row"><span class="lbl">Cilj HR</span><span class="val">${session.plannedHrZone ? PLAN.hrRangeStr(session.plannedHrZone, state.maxHr) : "—"}</span></div>
+      <div class="row"><span class="lbl">Cilj HR</span><span class="val">${session.plannedHrZone ? PLAN.hrRangeStr(session.plannedHrZone, state.maxHr, state.hrZones) : "—"}</span></div>
       <div class="row" style="margin-top:6px"><span class="hint">${session.description}</span></div>
       ${watchStepsHtml}
     `;
@@ -655,18 +685,16 @@ function openLogModal(session, adhocRun = null) {
 }
 
 // Render Apple Watch structured workout steps
-function renderWatchSteps(steps, paces, maxHr) {
+function renderWatchSteps(steps, paces, maxHr, hrZones) {
   if (!steps || steps.length === 0) return "";
   const stepRows = steps.map((step, i) => {
     const pace = step.paceKey ? paces[step.paceKey] : null;
     const paceStr = pace ? PLAN.paceRangeStr(pace) : "—";
-    const hrStr = step.paceKey === "easy" || step.paceKey === "long" || step.paceKey === "recovery"
-      ? "Z2 (108-126)"
-      : step.paceKey === "tempo" || step.paceKey === "marathon"
-      ? "Z3 (126-144)"
-      : step.paceKey === "intervals"
-      ? "Z4 (144-162)"
-      : "—";
+    let zoneKey = null;
+    if (step.paceKey === "easy" || step.paceKey === "long" || step.paceKey === "recovery") zoneKey = "z2";
+    else if (step.paceKey === "tempo" || step.paceKey === "marathon") zoneKey = "z3";
+    else if (step.paceKey === "intervals") zoneKey = "z4";
+    const hrStr = zoneKey ? PLAN.hrRangeStr(zoneKey, maxHr, hrZones) : "—";
     const distStr = step.distance >= 1 ? `${step.distance.toFixed(1)} km` : `${(step.distance * 1000).toFixed(0)} m`;
     let html = `
       <div class="watch-step">
@@ -903,12 +931,21 @@ function bindUI() {
     const goalSec = parseDurationStr($("#setGoalTime").value);
     const slowestStr = $("#setSlowestPace").value.trim();
     const slowestSec = slowestStr ? parseDurationStr(slowestStr) : null;
+    // HR zones (vsi morajo biti vneseni za uporabo)
+    const z1 = parseInt($("#setZ1Max").value) || null;
+    const z2 = parseInt($("#setZ2Max").value) || null;
+    const z3 = parseInt($("#setZ3Max").value) || null;
+    const z4 = parseInt($("#setZ4Max").value) || null;
+    const hrZones = (z2 && z3 && z4) ? { z1Max: z1, z2Max: z2, z3Max: z3, z4Max: z4 } : null;
+    await Store.setSetting("hrZones", hrZones);
+
     if (maxHr) await Store.setSetting("maxHr", maxHr);
     if (goalSec) await Store.setSetting("goalTimeSec", goalSec);
     if (slowestSec) await Store.setSetting("slowestPace", slowestSec);
     state.maxHr = maxHr || state.maxHr;
     state.goalTimeSec = goalSec || state.goalTimeSec;
     state.slowestPace = slowestSec || state.slowestPace;
+    state.hrZones = hrZones;
     // Recompute paces from new goal + floor
     state.paces = PLAN.pacesFromRace(42.195, state.goalTimeSec, state.slowestPace);
     await Store.setSetting("paces", state.paces);

@@ -194,9 +194,14 @@ main { padding: 16px; max-width: 720px; margin: 0 auto; }
   padding: 8px 0;
   border-bottom: 1px solid var(--border);
   align-items: center;
+  cursor: pointer;
+  transition: background 0.1s;
 }
+.week-row[data-week]:hover { background: rgba(0, 145, 234, 0.05); }
+.week-row[data-week]:active { background: rgba(0, 145, 234, 0.15); }
 .week-row:last-child { border-bottom: none; }
 .week-row.current { background: rgba(0, 145, 234, 0.08); margin: 0 -14px; padding: 8px 14px; }
+.week-row .week-num::after { content: " ›"; color: var(--accent); }
 .week-num { font-weight: 700; color: var(--text); }
 .week-km { color: var(--text-dim); font-size: 13px; }
 .week-sess { display: flex; gap: 4px; flex-wrap: wrap; }
