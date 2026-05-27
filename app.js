@@ -77,11 +77,12 @@ async function loadSettings() {
   state.maxHr = await Store.getSetting("maxHr", 180);
   const goalSec = await Store.getSetting("goalTimeSec", 14400);
   state.goalTimeSec = goalSec;
+  state.slowestPace = await Store.getSetting("slowestPace", 340); // 5:40/km default
 
   // Privzeto: pace cilji iz CILJA maratona (sub-4:00 → MP 5:41/km)
-  // Easy pace anchored na goal MP zagotavlja, da uporabnik dejansko teče easy,
-  // ne pa na pace, ki bi ga zmogel po HM PB rezultatu.
-  state.paces = PLAN.pacesFromRace(42.195, goalSec);
+  // Easy pace anchored na goal MP zagotavlja, da uporabnik dejansko teče easy.
+  // slowestPace zagotovi, da easy/long/recovery niso počasnejši od uporabnikovega floor-a.
+  state.paces = PLAN.pacesFromRace(42.195, goalSec, state.slowestPace);
 
   // Custom override (uporabnik je v nastavitvah ročno preračunal paces)
   const overridePaces = await Store.getSetting("paces", null);
@@ -322,6 +323,7 @@ function isoWeekKey(dateStr) {
 function renderSettings() {
   $("#setMaxHr").value = state.maxHr;
   $("#setGoalTime").value = fmtDuration(state.goalTimeSec);
+  $("#setSlowestPace").value = fmtPace(state.slowestPace).replace("/km", "");
 
   const pacesDiv = $("#pacesTable");
   pacesDiv.innerHTML = "";
@@ -514,12 +516,16 @@ function bindUI() {
   $("#saveProfile").addEventListener("click", async () => {
     const maxHr = parseInt($("#setMaxHr").value);
     const goalSec = parseDurationStr($("#setGoalTime").value);
+    const slowestStr = $("#setSlowestPace").value.trim();
+    const slowestSec = slowestStr ? parseDurationStr(slowestStr) : null;
     if (maxHr) await Store.setSetting("maxHr", maxHr);
     if (goalSec) await Store.setSetting("goalTimeSec", goalSec);
+    if (slowestSec) await Store.setSetting("slowestPace", slowestSec);
     state.maxHr = maxHr || state.maxHr;
     state.goalTimeSec = goalSec || state.goalTimeSec;
-    // Recompute paces from new goal
-    state.paces = PLAN.pacesFromRace(42.195, state.goalTimeSec);
+    state.slowestPace = slowestSec || state.slowestPace;
+    // Recompute paces from new goal + floor
+    state.paces = PLAN.pacesFromRace(42.195, state.goalTimeSec, state.slowestPace);
     await Store.setSetting("paces", state.paces);
     await refreshFullPlan();
     renderHeader();
@@ -532,7 +538,7 @@ function bindUI() {
     const dist = parseFloat($("#raceDist").value);
     const sec = parseDurationStr($("#raceTime").value);
     if (!dist || !sec) { alert("Vnesi razdaljo in čas."); return; }
-    state.paces = PLAN.pacesFromRace(dist, sec);
+    state.paces = PLAN.pacesFromRace(dist, sec, state.slowestPace);
     await Store.setSetting("paces", state.paces);
     if (dist > 20 && dist < 22) {
       await Store.setSetting("hmTimeSec", sec);

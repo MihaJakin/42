@@ -268,15 +268,36 @@ function adaptivePaces(completedSessions, basePaces = DEFAULT_PACES) {
 
 // Recompute paces iz nove race performanse (Riegel formula)
 // new HM/10K/5K → estimate marathon pace → recompute all
-function pacesFromRace(distanceKm, timeSec) {
+// `slowestPace` = floor v sec/km za počasne teke (recovery/easy/long).
+// Default 340 (5:40/km) — uporabnik želi nikoli ne teči počasneje.
+// Če floor sili kompresijo, počasne teke stisnemo v ozek pas tik pod floor-om
+// (recovery: 3s pas, easy: 8s pas, long: 15s pas). MP/tempo/intervali so vedno
+// izračunani iz projekcije ne glede na floor.
+function pacesFromRace(distanceKm, timeSec, slowestPace = 340) {
   // Riegel: T2 = T1 * (D2/D1)^1.06
   const projectedMarathonSec = timeSec * Math.pow(42.195 / distanceKm, 1.06);
   const projectedMP = projectedMarathonSec / 42.195; // sec/km
-  // Adjust paces relative to MP
+
+  const naturalRecoveryMax = projectedMP * 1.23;
+  const floor = slowestPace;
+
+  let recovery, easy, long;
+  if (naturalRecoveryMax > floor) {
+    // Floor zavzame nad naravno počasnimi paci → kompresiraj v ozek pas okoli floor-a
+    recovery = { min: floor - 3,  max: floor };
+    easy     = { min: floor - 8,  max: floor };
+    long     = { min: floor - 15, max: floor };
+  } else {
+    // Naravni paci so že hitrejši od floor-a (uporabnikov cilj je dovolj agresiven)
+    recovery = { min: Math.round(projectedMP * 1.15), max: Math.round(projectedMP * 1.23) };
+    easy     = { min: Math.round(projectedMP * 1.06), max: Math.round(projectedMP * 1.15) };
+    long     = { min: Math.round(projectedMP * 1.03), max: Math.round(projectedMP * 1.12) };
+  }
+
   return {
-    recovery:  { min: Math.round(projectedMP * 1.15), max: Math.round(projectedMP * 1.23) },
-    easy:      { min: Math.round(projectedMP * 1.06), max: Math.round(projectedMP * 1.15) },
-    long:      { min: Math.round(projectedMP * 1.03), max: Math.round(projectedMP * 1.12) },
+    recovery,
+    easy,
+    long,
     marathon:  { min: Math.round(projectedMP * 0.97), max: Math.round(projectedMP * 1.01) },
     tempo:     { min: Math.round(projectedMP * 0.85), max: Math.round(projectedMP * 0.91) },
     intervals: { min: Math.round(projectedMP * 0.79), max: Math.round(projectedMP * 0.85) },
