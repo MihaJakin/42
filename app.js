@@ -64,7 +64,34 @@ function weekFromDate(dateStr) {
 
 // === INIT ===
 async function init() {
+  // Sync status hook za UI
+  window.onSyncStatus = (status, msg) => {
+    const el = $("#syncStatus");
+    if (!el) return;
+    const ts = new Date().toLocaleTimeString("sl-SI");
+    if (status === "ok") el.textContent = `Status: ✓ sinhronizirano ${ts}`;
+    else if (status === "error") el.textContent = `Status: ⚠ napaka — ${msg}`;
+    else el.textContent = `Status: ${status}`;
+  };
+
   await loadSettings();
+
+  // Če je sync vklopljen in imamo gist ID, pulli iz gista PRED renderingom
+  // (gist je canonical, lokalni IndexedDB samo cache)
+  try {
+    const enabled = await Store.getSetting("syncEnabled");
+    const gistId = await Store.getSetting("gistId");
+    const pat = await Store.getSetting("gistPat");
+    if (enabled && gistId && pat) {
+      await Sync.pullFromGist();
+      await loadSettings(); // re-load po pull-u (pace cilji se lahko spremenijo)
+      window.onSyncStatus("ok");
+    }
+  } catch (e) {
+    console.warn("Boot sync pull failed:", e.message);
+    window.onSyncStatus("error", e.message);
+  }
+
   await refreshFullPlan();
   await refreshCompleted();
   state.currentWeek = currentWeekFromToday();
@@ -278,6 +305,7 @@ function renderAdhocForWeek(weekNum) {
       e.stopPropagation();
       if (!confirm("Izbrišem ta tek?")) return;
       await Store.del("completed", parseInt(btn.dataset.delId));
+      Sync.scheduleSyncPush();
       await refreshCompleted();
       renderWeek();
       renderStats();
@@ -400,10 +428,25 @@ function isoWeekKey(dateStr) {
 }
 
 // === SETTINGS ===
-function renderSettings() {
+async function renderSettings() {
   $("#setMaxHr").value = state.maxHr;
   $("#setGoalTime").value = fmtDuration(state.goalTimeSec);
   $("#setSlowestPace").value = fmtPace(state.slowestPace).replace("/km", "");
+
+  // Sync nastavitve
+  const pat = await Store.getSetting("gistPat", "");
+  const gistId = await Store.getSetting("gistId", "");
+  const enabled = await Store.getSetting("syncEnabled", false);
+  const lastSync = await Store.getSetting("lastSync", null);
+  $("#syncPat").value = pat || "";
+  $("#syncGistId").value = gistId || "";
+  $("#syncEnabled").checked = !!enabled;
+  if (lastSync) {
+    const d = new Date(lastSync);
+    $("#syncStatus").textContent = `Status: ✓ zadnja sinhronizacija ${d.toLocaleString("sl-SI")}`;
+  } else if (pat) {
+    $("#syncStatus").textContent = "Status: PAT shranjen, še ni sync-a";
+  }
 
   const pacesDiv = $("#pacesTable");
   pacesDiv.innerHTML = "";
@@ -543,6 +586,7 @@ async function handleLogSubmit(e) {
   }
 
   await Store.add("completed", entry);
+  Sync.scheduleSyncPush(); // auto-push (debounced)
 
   // Adaptive recalibration — preveri, če je potreben re-compute pace-ov
   await maybeAdaptPaces();
@@ -604,6 +648,7 @@ async function handleSkip() {
     await Store.del("completed", existing.id);
   }
   await Store.add("completed", entry);
+  Sync.scheduleSyncPush();
   await refreshCompleted();
   closeLogModal();
   renderWeek();
@@ -660,6 +705,7 @@ function bindUI() {
     // Recompute paces from new goal + floor
     state.paces = PLAN.pacesFromRace(42.195, state.goalTimeSec, state.slowestPace);
     await Store.setSetting("paces", state.paces);
+    Sync.scheduleSyncPush();
     await refreshFullPlan();
     renderHeader();
     renderWeek();
@@ -744,6 +790,71 @@ function bindUI() {
       alert("Seed naložen.");
     } catch (err) {
       alert("Napaka: " + err.message);
+    }
+  });
+
+  // === SYNC UI ===
+  $("#syncPat").addEventListener("change", async () => {
+    const val = $("#syncPat").value.trim();
+    if (val) await Store.setSetting("gistPat", val);
+  });
+  $("#syncEnabled").addEventListener("change", async () => {
+    await Store.setSetting("syncEnabled", $("#syncEnabled").checked);
+  });
+  $("#syncGistId").addEventListener("change", async () => {
+    const val = $("#syncGistId").value.trim();
+    if (val) await Store.setSetting("gistId", val);
+  });
+  $("#syncTest").addEventListener("click", async () => {
+    try {
+      const val = $("#syncPat").value.trim();
+      if (val) await Store.setSetting("gistPat", val);
+      const u = await Sync.testAuth();
+      alert(`✓ PAT OK\nPrijavljen kot: ${u.login}${u.name ? " (" + u.name + ")" : ""}`);
+      window.onSyncStatus("ok");
+    } catch (e) {
+      alert("⚠ Napaka: " + e.message);
+      window.onSyncStatus("error", e.message);
+    }
+  });
+  $("#syncPush").addEventListener("click", async () => {
+    try {
+      const val = $("#syncPat").value.trim();
+      if (val) await Store.setSetting("gistPat", val);
+      const r = await Sync.pushToGist();
+      if (r.created) {
+        $("#syncGistId").value = r.gistId;
+        alert(`✓ Nov gist ustvarjen!\nID: ${r.gistId}\nVklopil sem auto-sync. Na drugi napravi vnesi isti PAT in Gist ID, ali pa pulli.`);
+        // Auto-enable sync after first successful push
+        $("#syncEnabled").checked = true;
+        await Store.setSetting("syncEnabled", true);
+      } else {
+        alert("✓ Sinhronizirano");
+      }
+      window.onSyncStatus("ok");
+      renderSettings();
+    } catch (e) {
+      alert("⚠ Push napaka: " + e.message);
+      window.onSyncStatus("error", e.message);
+    }
+  });
+  $("#syncPull").addEventListener("click", async () => {
+    try {
+      if (!confirm("Pulli iz gista bo prepisal vse lokalne podatke. Nadaljujem?")) return;
+      const val = $("#syncPat").value.trim();
+      if (val) await Store.setSetting("gistPat", val);
+      const idVal = $("#syncGistId").value.trim();
+      if (idVal) await Store.setSetting("gistId", idVal);
+      const r = await Sync.pullFromGist();
+      alert(`✓ Pulled iz gista ${r.gistId} (${r.fetchedBytes} bytes).`);
+      await loadSettings();
+      await refreshFullPlan();
+      await refreshCompleted();
+      renderHeader(); renderWeek(); renderPlan(); renderStats(); renderSettings();
+      window.onSyncStatus("ok");
+    } catch (e) {
+      alert("⚠ Pull napaka: " + e.message);
+      window.onSyncStatus("error", e.message);
     }
   });
 

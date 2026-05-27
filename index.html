@@ -91,8 +91,31 @@
         </div>
 
         <div class="card">
-          <h3>Sync / Backup</h3>
-          <p class="hint">PWA ne hrani podatkov v oblaku. Za sync med napravami uporabi JSON export/import (lahko ga shraniš v privat GitHub gist).</p>
+          <h3>☁ Sync (GitHub Gist)</h3>
+          <p class="hint">Avtomatski sync med napravami prek privatnega GitHub Gista. PAT ostane v tvojem brskalniku, ni nikjer drugje.</p>
+          <label>GitHub Personal Access Token (scope: gist)
+            <input type="password" id="syncPat" placeholder="ghp_..." autocomplete="off" />
+            <span class="hint">Generiraj: github.com → Settings → Developer settings → PAT (classic) → Generate → "gist" scope only</span>
+          </label>
+          <label>Gist ID
+            <input type="text" id="syncGistId" placeholder="auto-fill po prvi push; ali pa prilepi iz druge naprave" />
+            <span class="hint">Prazno + Push = ustvarjen nov gist. Polno + Pull = naloži obstoječi gist.</span>
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;margin-top:14px;">
+            <input type="checkbox" id="syncEnabled" style="width:auto;flex:0;" />
+            <span>Auto-sync vklopljen (push 2 s po vsaki spremembi)</span>
+          </label>
+          <div class="row" style="margin-top:10px;">
+            <button class="btn" id="syncTest">Test PAT</button>
+            <button class="btn" id="syncPush">⬆ Push</button>
+            <button class="btn" id="syncPull">⬇ Pull</button>
+          </div>
+          <p class="hint" id="syncStatus" style="margin-top:8px;">Status: nepovezano</p>
+        </div>
+
+        <div class="card">
+          <h3>Backup (lokalno)</h3>
+          <p class="hint">Ročni JSON export / import (npr. za backup ali prenos brez GitHuba).</p>
           <div class="row">
             <button class="btn" id="exportBtn">⬇ Export JSON</button>
             <button class="btn" id="importBtn">⬆ Import JSON</button>
@@ -178,6 +201,7 @@
 
   <script src="plan.js"></script>
   <script src="store.js"></script>
+  <script src="sync.js"></script>
   <script src="app.js"></script>
   <script>
     if ("serviceWorker" in navigator) {
