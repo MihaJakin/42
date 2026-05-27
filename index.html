@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="sl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0091ea" />
+  <title>Marathon 18.10.2026</title>
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="icon" href="icons/icon-192.png" />
+  <link rel="apple-touch-icon" href="icons/icon-192.png" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="top">
+    <div class="brand">
+      <span class="logo">🏃</span>
+      <div>
+        <div class="title">Marathon 18.10.2026</div>
+        <div class="subtitle"><span id="daysToRace">…</span> dni do maratona · cilj <strong id="goalTime">sub-4:00</strong></div>
+      </div>
+    </div>
+    <nav class="tabs">
+      <button class="tab active" data-tab="week">Teden</button>
+      <button class="tab" data-tab="plan">Plan</button>
+      <button class="tab" data-tab="stats">Statistika</button>
+      <button class="tab" data-tab="settings">⚙</button>
+    </nav>
+  </header>
+
+  <main id="main">
+    <!-- TAB: TEDEN -->
+    <section class="tab-panel active" data-panel="week">
+      <div class="week-header">
+        <button id="prevWeek" class="icon-btn">‹</button>
+        <div>
+          <div class="week-label" id="weekLabel">Teden …</div>
+          <div class="week-meta" id="weekMeta"></div>
+        </div>
+        <button id="nextWeek" class="icon-btn">›</button>
+      </div>
+      <div id="weekSessions" class="sessions"></div>
+    </section>
+
+    <!-- TAB: PLAN -->
+    <section class="tab-panel" data-panel="plan">
+      <div class="plan-overview" id="planOverview"></div>
+    </section>
+
+    <!-- TAB: STATISTIKA -->
+    <section class="tab-panel" data-panel="stats">
+      <div id="statsContent"></div>
+    </section>
+
+    <!-- TAB: SETTINGS -->
+    <section class="tab-panel" data-panel="settings">
+      <div class="settings">
+        <h2>Nastavitve</h2>
+        <div class="card">
+          <h3>Profil</h3>
+          <label>Max HR (bpm)
+            <input type="number" id="setMaxHr" min="140" max="220" />
+          </label>
+          <label>Cilj maratona (h:mm:ss)
+            <input type="text" id="setGoalTime" placeholder="3:59:59" />
+          </label>
+          <button class="btn primary" id="saveProfile">Shrani profil</button>
+        </div>
+
+        <div class="card">
+          <h3>Pace cilji (sec/km)</h3>
+          <p class="hint">Privzeto izračunano iz tvojega polmaratona. Lahko pa vneseš novo race performanco za auto-recompute.</p>
+          <div id="pacesTable"></div>
+          <hr/>
+          <label>Nova race performance (npr. nov 10K test)</label>
+          <div class="row">
+            <input type="number" id="raceDist" placeholder="km" step="0.1" />
+            <input type="text" id="raceTime" placeholder="mm:ss ali h:mm:ss" />
+            <button class="btn" id="recomputePaces">Preračunaj</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>Sync / Backup</h3>
+          <p class="hint">PWA ne hrani podatkov v oblaku. Za sync med napravami uporabi JSON export/import (lahko ga shraniš v privat GitHub gist).</p>
+          <div class="row">
+            <button class="btn" id="exportBtn">⬇ Export JSON</button>
+            <button class="btn" id="importBtn">⬆ Import JSON</button>
+            <input type="file" id="importFile" accept=".json" hidden />
+          </div>
+          <hr/>
+          <button class="btn" id="loadSeed">Naloži seed (Apple Health zgodovina)</button>
+          <hr/>
+          <button class="btn danger" id="resetAll">⚠ Resetiraj vse</button>
+        </div>
+
+        <div class="card">
+          <h3>O aplikaciji</h3>
+          <p class="hint">Lokalna PWA. Vsi podatki ostanejo v tvojem brskalniku (IndexedDB). Brez registracije, brez serverja, deluje offline.</p>
+          <p class="hint" id="appVersion">v1.0.0</p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- MODAL: log session -->
+  <div class="modal" id="logModal" hidden>
+    <div class="modal-content">
+      <button class="close" id="closeModal">×</button>
+      <h2 id="modalTitle">Vpiši trening</h2>
+      <div class="planned-info" id="modalPlanned"></div>
+      <form id="logForm">
+        <input type="hidden" id="logSessionId" />
+        <label>Datum
+          <input type="date" id="logDate" required />
+        </label>
+        <div class="row">
+          <label>Razdalja (km)
+            <input type="number" id="logKm" step="0.01" min="0" required />
+          </label>
+          <label>Trajanje (h:mm:ss ali mm:ss)
+            <input type="text" id="logDuration" placeholder="0:42:30" required />
+          </label>
+        </div>
+        <div class="row">
+          <label>Avg HR
+            <input type="number" id="logAvgHr" min="60" max="220" />
+          </label>
+          <label>Max HR
+            <input type="number" id="logMaxHr" min="60" max="220" />
+          </label>
+        </div>
+        <label>RPE (1–10)
+          <input type="range" id="logRpe" min="1" max="10" value="5" />
+          <span id="logRpeVal">5</span>
+        </label>
+        <label>Občutek
+          <select id="logFeel">
+            <option value="great">😀 Odlično</option>
+            <option value="good" selected>🙂 Dobro</option>
+            <option value="ok">😐 OK</option>
+            <option value="hard">😓 Težko</option>
+            <option value="bad">🤕 Slabo (bolečina)</option>
+          </select>
+        </label>
+        <label>Beležka
+          <textarea id="logNotes" rows="2" placeholder="Vreme, počutje, oprema, kar koli …"></textarea>
+        </label>
+        <div class="row">
+          <button type="button" class="btn ghost" id="skipBtn">Preskoči sejo</button>
+          <button type="submit" class="btn primary">Shrani trening</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="plan.js"></script>
+  <script src="store.js"></script>
+  <script src="app.js"></script>
+  <script>
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("sw.js").catch(console.error);
+    }
+  </script>
+</body>
+</html>
