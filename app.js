@@ -136,6 +136,27 @@ async function refreshFullPlan() {
   state.fullPlan = PLAN.generateFullPlan(state.paces, state.maxHr);
 }
 
+// Readiness: koliko km in počitka v zadnjih 7 dneh pred danim datumom.
+// Vrne color + label za prikaz "pripravljen / utrujen / preveč".
+async function computeReadiness(sessionDate) {
+  const completed = await Store.getAll("completed");
+  const history = await Store.getAll("history");
+  const sevenDaysAgo = PLAN.addDays(sessionDate, -7);
+  const recent = [];
+  for (const c of completed) if (!c.skipped && c.km > 0 && c.date >= sevenDaysAgo && c.date < sessionDate) recent.push(c);
+  for (const h of history) if (h.date >= sevenDaysAgo && h.date < sessionDate) recent.push(h);
+  const km = recent.reduce((s, r) => s + (r.km || 0), 0);
+  const uniqueDates = new Set(recent.map(r => r.date));
+  const restDays = 7 - uniqueDates.size;
+
+  // Pragovi: prilagojeni za 3-4 sej/teden uporabnika
+  if (km > 65 && restDays < 2) return { color: "#ef4444", label: "Visok volumen brez počitka", emoji: "🔴" };
+  if (km > 55) return { color: "#f59e0b", label: "Visok volumen", emoji: "🟠" };
+  if (km > 40 && restDays < 2) return { color: "#f59e0b", label: "Zmerno utrujen", emoji: "🟠" };
+  if (km < 5 && restDays > 5) return { color: "#0091ea", label: "Spočit (malo treninga)", emoji: "🔵" };
+  return { color: "#22c55e", label: "Pripravljen", emoji: "🟢" };
+}
+
 // Za vsako sejo v planu poišče history zapis na istem datumu in ga zveže
 // kot 'completed'. Idempotentno: že linkane seje preskoči.
 // Vrne število novo linkanih.
@@ -201,7 +222,7 @@ function renderHeader() {
 }
 
 // === WEEK VIEW ===
-function renderWeek() {
+async function renderWeek() {
   const w = state.currentWeek;
   const wkData = state.fullPlan.weeks.find(x => x.week === w);
   const wkSessions = state.fullPlan.sessions.filter(s => s.week === w);
@@ -209,7 +230,30 @@ function renderWeek() {
   $("#weekLabel").textContent = `Teden ${w}/${PLAN.CONFIG.totalWeeks} · ${wkData.phase}`;
   const totalKm = wkSessions.reduce((sum, s) => sum + s.km, 0);
   const dateRange = `${fmtDate(wkSessions[0].date)} – ${fmtDate(wkSessions[wkSessions.length - 1].date)}`;
-  $("#weekMeta").textContent = `${dateRange} · ${totalKm.toFixed(0)} km plan`;
+
+  // Volume indicator: izračunaj dejansko opravljeno (planned + adhoc + history avtolinkano)
+  let actualKm = 0;
+  for (const s of wkSessions) {
+    const c = state.completedBySessionId[s.id];
+    if (c && !c.skipped) actualKm += c.km;
+  }
+  // Plus ad-hoc teki znotraj tedenskega range
+  const wkStart = wkSessions[0].date;
+  const wkEnd = wkSessions[wkSessions.length - 1].date;
+  for (const a of (state.adhocRuns || [])) {
+    if (a.date >= wkStart && a.date <= wkEnd) actualKm += a.km;
+  }
+  const pct = totalKm > 0 ? Math.round((actualKm / totalKm) * 100) : 0;
+  let pctColor = "var(--text-dim)";
+  let pctEmoji = "";
+  if (pct >= 85) { pctColor = "var(--success)"; pctEmoji = "✓"; }
+  else if (pct >= 60) { pctColor = "var(--warn)"; pctEmoji = "⚠"; }
+  else if (actualKm > 0) { pctColor = "var(--danger)"; pctEmoji = "↓"; }
+
+  $("#weekMeta").innerHTML = `
+    ${dateRange} · plan ${totalKm.toFixed(0)} km ·
+    <span style="color:${pctColor};font-weight:600">opravljeno ${actualKm.toFixed(1)} km (${pct}%) ${pctEmoji}</span>
+  `;
 
   const container = $("#weekSessions");
   container.innerHTML = "";
@@ -222,13 +266,25 @@ function renderWeek() {
   wkSessions.sort((a, b) => a.date.localeCompare(b.date));
   const today = todayISO();
 
+  // Pre-compute readiness za nedostavljene seje (paralelno)
+  const readinessMap = {};
+  await Promise.all(wkSessions.map(async s => {
+    const c = state.completedBySessionId[s.id];
+    if (!c || c.rescheduled) {
+      readinessMap[s.id] = await computeReadiness(s.date);
+    }
+  }));
+
   for (const s of wkSessions) {
     const c = state.completedBySessionId[s.id];
-    const isToday = s.date === today;
-    const isPast = s.date < today;
-    const isFuture = s.date > today;
+    const isRescheduled = c && c.rescheduled && (c.km === 0); // premaknjena ampak še ne opravljena
+    // Če je premaknjena, prikaži kartico na NOVEM datumu (ne planskem)
+    const displayDate = isRescheduled ? c.date : s.date;
+    const isToday = displayDate === today;
+    const isPast = displayDate < today;
+    const isFuture = displayDate > today;
     const isSkipped = c && c.skipped;
-    const isCompleted = c && !c.skipped;
+    const isCompleted = c && !c.skipped && c.km > 0;
 
     const card = document.createElement("div");
     card.className = "session-card";
@@ -239,8 +295,10 @@ function renderWeek() {
     card.style.borderLeftColor = s.color;
     card.dataset.sessionId = s.id;
 
-    const dayName = DOW_NAMES[s.dow - 1];
-    const dateShort = fmtDate(s.date);
+    // Day name iz dejanskega prikaza (po premiku se lahko spremeni)
+    const displayDow = new Date(displayDate + "T00:00:00").getDay() || 7;
+    const dayName = DOW_NAMES[displayDow - 1];
+    const dateShort = fmtDate(displayDate);
     const planPace = PLAN.paceRangeStr(s.plannedPace);
     const planDur = fmtDuration(s.plannedDurationSec);
     const hrZone = s.plannedHrZone
@@ -251,6 +309,8 @@ function renderWeek() {
     if (c) {
       if (c.skipped) {
         actualHtml = `<div class="session-actual"><span class="badge skipped">PRESKOČENO</span> ${c.notes || ""}</div>`;
+      } else if (isRescheduled) {
+        actualHtml = `<div class="session-actual"><span class="badge today">📅 PREMAKNJENO</span> z ${fmtDate(c.originalDate)} → tap za vnos rezultata</div>`;
       } else {
         const actPace = c.durationSec / c.km;
         const planMidPace = s.plannedPace ? (s.plannedPace.min + s.plannedPace.max) / 2 : null;
@@ -273,10 +333,16 @@ function renderWeek() {
       actualHtml = `<div class="session-actual"><span class="badge today">DANES — tapni za vnos</span></div>`;
     }
 
+    // Readiness indikator (samo za neopravljene seje, ki še niso v preteklosti)
+    const readiness = readinessMap[s.id];
+    const readinessHtml = (readiness && !isCompleted && !isSkipped && !isPast)
+      ? `<span title="${readiness.label}" style="color:${readiness.color};font-size:14px;margin-right:4px;">${readiness.emoji}</span>`
+      : "";
+
     card.innerHTML = `
       <div class="session-head">
         <span class="session-type">
-          ${s.typeLabel}
+          ${readinessHtml}${s.typeLabel}
           <span class="pill" style="background:${s.color}">${s.type === "race" ? "🏁" : s.km + " km"}</span>
         </span>
         <span class="session-day">${dayName} · ${dateShort}</span>
@@ -287,6 +353,7 @@ function renderWeek() {
         ${planDur !== "—" ? `<span>~${planDur}</span>` : ""}
         ${hrZone ? `<span>${hrZone}</span>` : ""}
       </div>
+      ${readiness && !isCompleted && !isSkipped && !isPast ? `<div class="session-meta" style="font-size:12px"><span style="color:${readiness.color}">${readiness.emoji} ${readiness.label}</span></div>` : ""}
       <div class="session-desc">${s.description}</div>
       ${actualHtml}
     `;
@@ -523,6 +590,7 @@ function openLogModal(session, adhocRun = null) {
   modalAdhoc = adhocRun;
   $("#logModal").hidden = false;
   $("#skipBtn").hidden = !session; // ad-hoc nima "preskoči"
+  $("#rescheduleBtn").hidden = !session; // ad-hoc nima "premakni"
   $("#logTypeWrap").hidden = !!session; // tip selector samo za ad-hoc
 
   if (session) {
@@ -685,6 +753,40 @@ async function maybeAdaptPaces() {
   }
 }
 
+async function handleReschedule() {
+  if (!modalSession) return;
+  const newDate = prompt(
+    `Premakni "${modalSession.typeLabel} ${modalSession.km} km" iz ${fmtDate(modalSession.date)} na nov datum (YYYY-MM-DD):`,
+    todayISO()
+  );
+  if (!newDate || !/^\d{4}-\d{2}-\d{2}$/.test(newDate)) {
+    if (newDate) alert("Napačen format datuma. Pričakovan: YYYY-MM-DD (npr. 2026-05-30)");
+    return;
+  }
+  // Shranjeno kot "moved" entry — original session ima vnos "moved" status, novi datum
+  const entry = {
+    sessionId: modalSession.id,
+    date: newDate,
+    week: weekFromDate(newDate) || modalSession.week,
+    type: modalSession.type,
+    km: 0, // 0 = ni opravljeno, samo premaknjeno
+    durationSec: 0,
+    skipped: false,
+    rescheduled: true,
+    originalDate: modalSession.date,
+    notes: `Premaknjeno z ${fmtDate(modalSession.date)} → ${fmtDate(newDate)}`,
+    loggedAt: new Date().toISOString(),
+  };
+  const existing = state.completedBySessionId[modalSession.id];
+  if (existing && existing.id) await Store.del("completed", existing.id);
+  await Store.add("completed", entry);
+  Sync.scheduleSyncPush();
+  await refreshCompleted();
+  closeLogModal();
+  renderWeek();
+  alert(`Seja premaknjena na ${fmtDate(newDate)}. Ko jo opraviš, klikni nanjo in vpiši rezultat.`);
+}
+
 async function handleSkip() {
   if (!modalSession) return;
   const reason = prompt("Zakaj preskoči? (kratka opomba — bolezen, utrujenost, ...)") || "";
@@ -744,6 +846,7 @@ function bindUI() {
   });
   $("#logForm").addEventListener("submit", handleLogSubmit);
   $("#skipBtn").addEventListener("click", handleSkip);
+  $("#rescheduleBtn").addEventListener("click", handleReschedule);
   $("#logRpe").addEventListener("input", e => $("#logRpeVal").textContent = e.target.value);
 
   // Settings
