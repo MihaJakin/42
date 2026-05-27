@@ -376,3 +376,54 @@ main { padding: 16px; max-width: 720px; margin: 0 auto; }
   color: var(--text-dim);
 }
 .empty-state h3 { color: var(--text); }
+
+/* Floating action button */
+.fab {
+  position: fixed;
+  bottom: calc(env(safe-area-inset-bottom) + 20px);
+  right: 20px;
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: white;
+  border: none;
+  font-size: 32px;
+  font-weight: 300;
+  line-height: 1;
+  box-shadow: 0 4px 16px rgba(0, 145, 234, 0.45);
+  cursor: pointer;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.15s;
+}
+.fab:active { transform: scale(0.92); }
+.fab:hover { background: var(--accent-2); }
+
+/* Adhoc section */
+.adhoc-section {
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 1px dashed var(--border);
+}
+.adhoc-section h3 {
+  font-size: 14px;
+  color: var(--text-dim);
+  margin: 0 0 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.adhoc-section .session-card {
+  border-left-style: dashed;
+  border-left-width: 4px;
+}
+.adhoc-empty {
+  text-align: center;
+  padding: 16px;
+  color: var(--text-dim);
+  font-size: 13px;
+  font-style: italic;
+}

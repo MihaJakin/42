@@ -53,9 +53,12 @@ function daysBetween(a, b) {
 }
 
 function currentWeekFromToday() {
-  const today = todayISO();
-  const diff = daysBetween(PLAN.CONFIG.startDate, today);
-  if (diff < 0) return 1;
+  return Math.max(1, weekFromDate(todayISO()));
+}
+
+function weekFromDate(dateStr) {
+  const diff = daysBetween(PLAN.CONFIG.startDate, dateStr);
+  if (diff < 0) return 0;
   return Math.min(20, Math.floor(diff / 7) + 1);
 }
 
@@ -96,11 +99,15 @@ async function refreshFullPlan() {
 async function refreshCompleted() {
   const all = await Store.getAll("completed");
   state.completedBySessionId = {};
+  state.adhocRuns = [];
   for (const c of all) {
     if (c.sessionId) {
       state.completedBySessionId[c.sessionId] = c;
+    } else {
+      state.adhocRuns.push(c);
     }
   }
+  state.adhocRuns.sort((a, b) => a.date.localeCompare(b.date));
 }
 
 // === HEADER ===
@@ -203,6 +210,79 @@ function renderWeek() {
     card.addEventListener("click", () => openLogModal(s));
     container.appendChild(card);
   }
+
+  // Render ad-hoc runs za ta teden (po datumu znotraj weekStart-weekEnd)
+  renderAdhocForWeek(w);
+}
+
+function renderAdhocForWeek(weekNum) {
+  const list = $("#adhocList");
+  if (!list) return;
+  list.innerHTML = "";
+
+  const wkSessions = state.fullPlan.sessions.filter(s => s.week === weekNum);
+  if (!wkSessions.length) return;
+  const weekStart = wkSessions[0].date;
+  const weekEnd   = wkSessions[wkSessions.length - 1].date;
+
+  const adhoc = (state.adhocRuns || []).filter(r => r.date >= weekStart && r.date <= weekEnd);
+
+  if (adhoc.length === 0) {
+    list.innerHTML = '<div class="adhoc-empty">Brez dodatnih tekov ta teden.</div>';
+    return;
+  }
+
+  for (const r of adhoc) {
+    const typeLabel = (PLAN.TYPES[(r.type || "easy").toUpperCase()] || PLAN.TYPES.EASY).label;
+    const color = (PLAN.TYPES[(r.type || "easy").toUpperCase()] || PLAN.TYPES.EASY).color;
+    const card = document.createElement("div");
+    card.className = "session-card";
+    card.style.borderLeftColor = color;
+    const pace = r.km > 0 ? fmtPace(r.durationSec / r.km) : "—";
+    card.innerHTML = `
+      <div class="session-head">
+        <span class="session-type">
+          ${typeLabel}
+          <span class="pill" style="background:${color}">${r.km.toFixed(2)} km</span>
+        </span>
+        <span class="session-day">${fmtDate(r.date)}</span>
+      </div>
+      <div class="session-meta">
+        <span><strong>${r.km.toFixed(2)}</strong> km</span>
+        <span>${fmtDuration(r.durationSec)}</span>
+        <span>pace ${pace}</span>
+        ${r.avgHr ? `<span>HR ${r.avgHr}</span>` : ""}
+        ${r.rpe ? `<span>RPE ${r.rpe}/10</span>` : ""}
+      </div>
+      ${r.notes ? `<div class="session-desc">${escapeHtml(r.notes)}</div>` : ""}
+      <div class="session-actual" style="display:flex;gap:8px;align-items:center;">
+        <span class="badge done">AD-HOC</span>
+        <button class="btn ghost" data-edit-id="${r.id}" style="font-size:12px;padding:4px 8px;margin-left:auto">✎ Uredi</button>
+        <button class="btn ghost" data-del-id="${r.id}" style="font-size:12px;padding:4px 8px;color:var(--danger)">🗑</button>
+      </div>
+    `;
+    list.appendChild(card);
+  }
+
+  // Bind edit/delete
+  list.querySelectorAll("[data-edit-id]").forEach(btn => {
+    btn.addEventListener("click", e => {
+      e.stopPropagation();
+      const id = parseInt(btn.dataset.editId);
+      const run = state.adhocRuns.find(x => x.id === id);
+      if (run) openLogModal(null, run);
+    });
+  });
+  list.querySelectorAll("[data-del-id]").forEach(btn => {
+    btn.addEventListener("click", async e => {
+      e.stopPropagation();
+      if (!confirm("Izbrišem ta tek?")) return;
+      await Store.del("completed", parseInt(btn.dataset.delId));
+      await refreshCompleted();
+      renderWeek();
+      renderStats();
+    });
+  });
 }
 
 function escapeHtml(s) {
@@ -337,43 +417,70 @@ function renderSettings() {
 
 // === MODAL / LOG ===
 let modalSession = null;
+let modalAdhoc = null; // če editiramo obstoječi adhoc run
 
-function openLogModal(session) {
+function openLogModal(session, adhocRun = null) {
   modalSession = session;
+  modalAdhoc = adhocRun;
   $("#logModal").hidden = false;
-  $("#modalTitle").textContent = `${session.typeLabel} · ${DOW_NAMES[session.dow - 1]} ${fmtDate(session.date)}`;
-  $("#logSessionId").value = session.id;
-  $("#logDate").value = session.date;
+  $("#skipBtn").hidden = !session; // ad-hoc nima "preskoči"
+  $("#logTypeWrap").hidden = !!session; // tip selector samo za ad-hoc
 
-  const c = state.completedBySessionId[session.id];
-  if (c && !c.skipped) {
-    $("#logKm").value = c.km;
-    $("#logDuration").value = fmtDuration(c.durationSec);
-    $("#logAvgHr").value = c.avgHr || "";
-    $("#logMaxHr").value = c.maxHr || "";
-    $("#logRpe").value = c.rpe || 5;
-    $("#logRpeVal").textContent = c.rpe || 5;
-    $("#logFeel").value = c.feel || "good";
-    $("#logNotes").value = c.notes || "";
+  if (session) {
+    // Standard planned session
+    $("#modalTitle").textContent = `${session.typeLabel} · ${DOW_NAMES[session.dow - 1]} ${fmtDate(session.date)}`;
+    $("#logSessionId").value = session.id;
+    $("#logDate").value = session.date;
+
+    const c = state.completedBySessionId[session.id];
+    if (c && !c.skipped) {
+      $("#logKm").value = c.km;
+      $("#logDuration").value = fmtDuration(c.durationSec);
+      $("#logAvgHr").value = c.avgHr || "";
+      $("#logMaxHr").value = c.maxHr || "";
+      $("#logRpe").value = c.rpe || 5;
+      $("#logRpeVal").textContent = c.rpe || 5;
+      $("#logFeel").value = c.feel || "good";
+      $("#logNotes").value = c.notes || "";
+    } else {
+      $("#logKm").value = session.km;
+      $("#logDuration").value = "";
+      $("#logAvgHr").value = "";
+      $("#logMaxHr").value = "";
+      $("#logRpe").value = 5;
+      $("#logRpeVal").textContent = 5;
+      $("#logFeel").value = "good";
+      $("#logNotes").value = "";
+    }
+
+    const p = $("#modalPlanned");
+    p.innerHTML = `
+      <div class="row"><span class="lbl">Plan razdalja</span><span class="val">${session.km} km</span></div>
+      <div class="row"><span class="lbl">Plan pace</span><span class="val">${PLAN.paceRangeStr(session.plannedPace)}</span></div>
+      <div class="row"><span class="lbl">Plan trajanje</span><span class="val">${fmtDuration(session.plannedDurationSec)}</span></div>
+      <div class="row"><span class="lbl">Cilj HR</span><span class="val">${session.plannedHrZone ? PLAN.hrRangeStr(session.plannedHrZone, state.maxHr) : "—"}</span></div>
+      <div class="row" style="margin-top:6px"><span class="hint">${session.description}</span></div>
+    `;
   } else {
-    $("#logKm").value = session.km;
-    $("#logDuration").value = "";
-    $("#logAvgHr").value = "";
-    $("#logMaxHr").value = "";
-    $("#logRpe").value = 5;
-    $("#logRpeVal").textContent = 5;
-    $("#logFeel").value = "good";
-    $("#logNotes").value = "";
-  }
+    // Ad-hoc tek (nov ali editiranje)
+    const isEdit = !!adhocRun;
+    $("#modalTitle").textContent = isEdit ? "Uredi tek (izven plana)" : "Dodaj tek (izven plana)";
+    $("#logSessionId").value = "";
+    $("#logDate").value = isEdit ? adhocRun.date : todayISO();
+    $("#logKm").value = isEdit ? adhocRun.km : "";
+    $("#logDuration").value = isEdit ? fmtDuration(adhocRun.durationSec) : "";
+    $("#logAvgHr").value = isEdit ? (adhocRun.avgHr || "") : "";
+    $("#logMaxHr").value = isEdit ? (adhocRun.maxHr || "") : "";
+    $("#logRpe").value = isEdit ? (adhocRun.rpe || 5) : 5;
+    $("#logRpeVal").textContent = $("#logRpe").value;
+    $("#logFeel").value = isEdit ? (adhocRun.feel || "good") : "good";
+    $("#logNotes").value = isEdit ? (adhocRun.notes || "") : "";
+    $("#logType").value = isEdit ? (adhocRun.type || "easy") : "easy";
 
-  const p = $("#modalPlanned");
-  p.innerHTML = `
-    <div class="row"><span class="lbl">Plan razdalja</span><span class="val">${session.km} km</span></div>
-    <div class="row"><span class="lbl">Plan pace</span><span class="val">${PLAN.paceRangeStr(session.plannedPace)}</span></div>
-    <div class="row"><span class="lbl">Plan trajanje</span><span class="val">${fmtDuration(session.plannedDurationSec)}</span></div>
-    <div class="row"><span class="lbl">Cilj HR</span><span class="val">${session.plannedHrZone ? PLAN.hrRangeStr(session.plannedHrZone, state.maxHr) : "—"}</span></div>
-    <div class="row" style="margin-top:6px"><span class="hint">${session.description}</span></div>
-  `;
+    $("#modalPlanned").innerHTML = `
+      <div class="row"><span class="hint">Tek izven plana — ne vpliva na planirane seje, je pa upoštevan v statistiki.</span></div>
+    `;
+  }
 }
 
 function closeLogModal() {
@@ -383,7 +490,6 @@ function closeLogModal() {
 
 async function handleLogSubmit(e) {
   e.preventDefault();
-  if (!modalSession) return;
 
   const km = parseFloat($("#logKm").value);
   const durationSec = parseDurationStr($("#logDuration").value);
@@ -392,11 +498,9 @@ async function handleLogSubmit(e) {
     return;
   }
 
-  const entry = {
-    sessionId: modalSession.id,
-    date: $("#logDate").value,
-    week: modalSession.week,
-    type: modalSession.type,
+  const date = $("#logDate").value;
+  const baseEntry = {
+    date,
     km,
     durationSec,
     avgHr: parseInt($("#logAvgHr").value) || null,
@@ -408,10 +512,34 @@ async function handleLogSubmit(e) {
     loggedAt: new Date().toISOString(),
   };
 
-  // Najprej izbriši obstoječi vnos za to sejo, da ne podvojimo
-  const existing = state.completedBySessionId[modalSession.id];
-  if (existing && existing.id) {
-    await Store.del("completed", existing.id);
+  let entry;
+  if (modalSession) {
+    // Planned session log
+    entry = {
+      ...baseEntry,
+      sessionId: modalSession.id,
+      week: modalSession.week,
+      type: modalSession.type,
+    };
+    // Izbriši obstoječi vnos za to sejo
+    const existing = state.completedBySessionId[modalSession.id];
+    if (existing && existing.id) {
+      await Store.del("completed", existing.id);
+    }
+  } else {
+    // Ad-hoc run (nov ali edit obstoječega)
+    entry = {
+      ...baseEntry,
+      sessionId: null,
+      week: weekFromDate(date),
+      type: $("#logType").value,
+      adhoc: true,
+    };
+    if (modalAdhoc && modalAdhoc.id) {
+      // Editiranje — preserve id
+      entry.id = modalAdhoc.id;
+      await Store.del("completed", modalAdhoc.id);
+    }
   }
 
   await Store.add("completed", entry);
@@ -492,6 +620,8 @@ function bindUI() {
       $(`.tab-panel[data-panel="${t.dataset.tab}"]`).classList.add("active");
       if (t.dataset.tab === "stats") renderStats();
       if (t.dataset.tab === "plan") renderPlan();
+      // FAB samo na Teden zavihku
+      $("#addRunBtn").style.display = (t.dataset.tab === "week") ? "flex" : "none";
     });
   });
 
@@ -502,6 +632,9 @@ function bindUI() {
   $("#nextWeek").addEventListener("click", () => {
     if (state.currentWeek < 20) { state.currentWeek++; renderWeek(); }
   });
+
+  // FAB: dodaj ad-hoc tek
+  $("#addRunBtn").addEventListener("click", () => openLogModal(null, null));
 
   // Modal
   $("#closeModal").addEventListener("click", closeLogModal);

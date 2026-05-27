@@ -39,7 +39,14 @@
         <button id="nextWeek" class="icon-btn">›</button>
       </div>
       <div id="weekSessions" class="sessions"></div>
+      <div id="adhocSection" class="adhoc-section">
+        <h3>Dodatni teki (izven plana)</h3>
+        <div id="adhocList" class="sessions"></div>
+      </div>
     </section>
+
+    <!-- Floating action button: dodaj tek -->
+    <button id="addRunBtn" class="fab" title="Dodaj tek izven plana">+</button>
 
     <!-- TAB: PLAN -->
     <section class="tab-panel" data-panel="plan">
@@ -114,6 +121,18 @@
       <div class="planned-info" id="modalPlanned"></div>
       <form id="logForm">
         <input type="hidden" id="logSessionId" />
+        <label id="logTypeWrap" hidden>Tip treninga
+          <select id="logType">
+            <option value="easy">Easy</option>
+            <option value="recovery">Recovery</option>
+            <option value="long">Long</option>
+            <option value="tempo">Tempo</option>
+            <option value="mp">MP (marathon pace)</option>
+            <option value="intervals">Intervali</option>
+            <option value="cross">Cross-training (kolo, hike, ...)</option>
+            <option value="other">Drugo</option>
+          </select>
+        </label>
         <label>Datum
           <input type="date" id="logDate" required />
         </label>
