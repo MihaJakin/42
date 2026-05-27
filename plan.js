@@ -312,6 +312,128 @@ function pacesFromRace(distanceKm, timeSec, slowestPace = 340) {
   };
 }
 
+// === APPLE WATCH WORKOUT BLUEPRINTS ===
+// Avtomatsko generira strukturiran trening (steps) iz tipa seje + km.
+// Za sessions z opcijskim `watch:` overrideom v skeletu, ta override prevlada.
+// Vsak step ima:
+//   name, distance (km), paceKey ("easy"|"marathon"|"tempo"|"intervals"|...),
+//   repeat? (število ponovitev), rest? ({ distance, paceKey })
+
+function generateWatchPlan(session, paces) {
+  if (session.watch) return session.watch; // explicit override
+  const t = session.type;
+  const km = session.km;
+  const desc = (session.description || "").toLowerCase();
+
+  // Race day — race day strategija (sub-4:00 pacing)
+  if (t === "race") {
+    return [
+      { name: "Prvih 10 km (kontrola)", distance: 10, paceKey: "long",
+        note: "Drži se ~5:45/km. Še ne 'pusti' — noge so sveže, lahko hočeš prehiteti." },
+      { name: "10-30 km (MP)", distance: 20, paceKey: "marathon",
+        note: "Stabilen MP. Gel vsakih 35-40 min. Voda na vsakem servisu." },
+      { name: "30-42 km (finish)", distance: 12.2, paceKey: "marathon",
+        note: "Kar imaš. Če imaš v rezervi, postopen pospešek po 35. km." },
+    ];
+  }
+
+  // Easy / Recovery / Long → en kontinuirani step
+  if (t === "easy" || t === "recovery" || t === "long" || t === "progression" || t === "cross") {
+    return [{
+      name: t === "long" ? "Long run" : t === "recovery" ? "Recovery" : "Easy",
+      distance: km,
+      paceKey: t === "recovery" ? "recovery" : t === "long" ? "long" : "easy",
+      note: t === "easy" && desc.includes("strides")
+        ? "Po zaključku dodaj 4-6× 20 s strides @ ~4:00-4:20/km z 60 s počitka."
+        : null,
+    }];
+  }
+
+  // Tempo — wu + tempo block(s) + cool
+  if (t === "tempo") {
+    // Razčleni iz opisa: "2 km wu + 4 km @ tempo + 2 km cool + ..."
+    // Default pattern: 2 km wu, (km - 4) km tempo, 2 km cool
+    const wu = 2;
+    const cool = 2;
+    let work = km - wu - cool;
+
+    // Posebni primeri iz opisov
+    if (desc.includes("2×2,5 km") || desc.includes("2x2.5")) {
+      return [
+        { name: "Warm-up", distance: wu, paceKey: "easy" },
+        { name: "Tempo block", distance: 2.5, paceKey: "tempo", repeat: 2,
+          rest: { distance: 0.3, paceKey: "recovery", note: "90 s jog" } },
+        { name: "Cool-down", distance: cool, paceKey: "easy" },
+      ];
+    }
+    if (desc.includes("2×4 km") || desc.includes("2x4")) {
+      return [
+        { name: "Warm-up", distance: wu, paceKey: "easy" },
+        { name: "Tempo block", distance: 4, paceKey: "tempo", repeat: 2,
+          rest: { distance: 0.5, paceKey: "recovery", note: "3 min jog" } },
+        { name: "Cool-down", distance: cool, paceKey: "easy" },
+      ];
+    }
+    return [
+      { name: "Warm-up", distance: wu, paceKey: "easy" },
+      { name: "Tempo continuous", distance: work, paceKey: "tempo" },
+      { name: "Cool-down", distance: cool, paceKey: "easy" },
+    ];
+  }
+
+  // MP (marathon pace)
+  if (t === "mp") {
+    const wu = 2;
+    const cool = 2;
+    const work = km - wu - cool;
+    return [
+      { name: "Warm-up", distance: wu, paceKey: "easy" },
+      { name: "Marathon pace block", distance: work, paceKey: "marathon",
+        note: "Cilj: konsistenten pace ±5 s/km celoten blok." },
+      { name: "Cool-down", distance: cool, paceKey: "easy" },
+    ];
+  }
+
+  // Intervali — parsiranje "Nx800m" / "N×800 m" / "N×1 km" iz opisa
+  if (t === "intervals") {
+    const wu = 2;
+    const cool = 2;
+
+    // Prefer explicit rep count z opisa
+    const m800 = desc.match(/(\d+)\s*[x×]\s*800/);
+    if (m800) {
+      const reps = parseInt(m800[1]);
+      return [
+        { name: "Warm-up", distance: wu, paceKey: "easy" },
+        { name: `${reps}× 800 m @ 4:30-4:45/km`, distance: 0.8, paceKey: "intervals", repeat: reps,
+          rest: { distance: 0.4, paceKey: "recovery", note: "2 min jog" } },
+        { name: "Cool-down", distance: cool, paceKey: "easy" },
+      ];
+    }
+    const m1km = desc.match(/(\d+)\s*[x×]\s*1\s*km/);
+    if (m1km) {
+      const reps = parseInt(m1km[1]);
+      return [
+        { name: "Warm-up", distance: wu, paceKey: "easy" },
+        { name: `${reps}× 1 km @ 4:30-4:40/km`, distance: 1, paceKey: "intervals", repeat: reps,
+          rest: { distance: 0.4, paceKey: "recovery", note: "2 min jog" } },
+        { name: "Cool-down", distance: cool, paceKey: "easy" },
+      ];
+    }
+    // Fallback: 1 km reps iz preostanka
+    const reps = Math.max(1, Math.round(km - wu - cool));
+    return [
+      { name: "Warm-up", distance: wu, paceKey: "easy" },
+      { name: `${reps}× 1 km`, distance: 1, paceKey: "intervals", repeat: reps,
+        rest: { distance: 0.4, paceKey: "recovery", note: "2 min jog" } },
+      { name: "Cool-down", distance: cool, paceKey: "easy" },
+    ];
+  }
+
+  // Fallback
+  return [{ name: t, distance: km, paceKey: "easy" }];
+}
+
 // Export za browser (no modules)
 window.PLAN = {
   CONFIG: PLAN_CONFIG,
@@ -326,4 +448,5 @@ window.PLAN = {
   hrRangeStr,
   estimateDuration,
   addDays,
+  generateWatchPlan,
 };

@@ -354,6 +354,7 @@ main { padding: 16px; max-width: 720px; margin: 0 auto; }
 .planned-info .val { font-weight: 600; }
 
 #logForm label { display: block; font-size: 12px; color: var(--text-dim); margin-top: 10px; }
+#logForm label[hidden] { display: none; }
 #logForm input, #logForm select, #logForm textarea {
   width: 100%;
   padding: 10px;
@@ -426,4 +427,77 @@ main { padding: 16px; max-width: 720px; margin: 0 auto; }
   color: var(--text-dim);
   font-size: 13px;
   font-style: italic;
+}
+
+/* Apple Watch workout steps */
+.watch-block {
+  margin-top: 12px;
+  padding: 12px;
+  background: var(--surface-2);
+  border-radius: 10px;
+  border-left: 3px solid var(--accent);
+}
+.watch-block summary {
+  cursor: pointer;
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--text);
+  padding: 4px 0;
+  list-style: none;
+}
+.watch-block summary::-webkit-details-marker { display: none; }
+.watch-block[open] summary::after { content: " ▴"; color: var(--text-dim); }
+.watch-block summary::after { content: " ▾"; color: var(--text-dim); }
+.watch-steps { margin: 8px 0; display: flex; flex-direction: column; gap: 8px; }
+.watch-step {
+  background: var(--surface);
+  padding: 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+}
+.watch-step-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.watch-step-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  background: var(--accent);
+  color: white;
+  border-radius: 50%;
+  font-size: 12px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+.watch-step-name { flex: 1; font-weight: 600; font-size: 14px; }
+.watch-step-dist { font-weight: 700; color: var(--accent); font-size: 14px; }
+.watch-step-meta { font-size: 12px; color: var(--text-dim); margin-left: 30px; }
+.watch-step-note {
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-left: 30px;
+  margin-top: 4px;
+  font-style: italic;
+}
+.watch-step-rest {
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-left: 30px;
+  margin-top: 6px;
+  padding: 4px 8px;
+  background: var(--surface-2);
+  border-radius: 4px;
+}
+.watch-tip {
+  margin-top: 10px;
+  padding: 8px 10px;
+  background: rgba(0, 145, 234, 0.08);
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1.5;
 }

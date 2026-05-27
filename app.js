@@ -621,12 +621,16 @@ function openLogModal(session, adhocRun = null) {
     }
 
     const p = $("#modalPlanned");
+    const watchPlan = PLAN.generateWatchPlan(session, state.paces);
+    const watchStepsHtml = renderWatchSteps(watchPlan, state.paces, state.maxHr);
+
     p.innerHTML = `
       <div class="row"><span class="lbl">Plan razdalja</span><span class="val">${session.km} km</span></div>
       <div class="row"><span class="lbl">Plan pace</span><span class="val">${PLAN.paceRangeStr(session.plannedPace)}</span></div>
       <div class="row"><span class="lbl">Plan trajanje</span><span class="val">${fmtDuration(session.plannedDurationSec)}</span></div>
       <div class="row"><span class="lbl">Cilj HR</span><span class="val">${session.plannedHrZone ? PLAN.hrRangeStr(session.plannedHrZone, state.maxHr) : "—"}</span></div>
       <div class="row" style="margin-top:6px"><span class="hint">${session.description}</span></div>
+      ${watchStepsHtml}
     `;
   } else {
     // Ad-hoc tek (nov ali editiranje)
@@ -648,6 +652,50 @@ function openLogModal(session, adhocRun = null) {
       <div class="row"><span class="hint">Tek izven plana — ne vpliva na planirane seje, je pa upoštevan v statistiki.</span></div>
     `;
   }
+}
+
+// Render Apple Watch structured workout steps
+function renderWatchSteps(steps, paces, maxHr) {
+  if (!steps || steps.length === 0) return "";
+  const stepRows = steps.map((step, i) => {
+    const pace = step.paceKey ? paces[step.paceKey] : null;
+    const paceStr = pace ? PLAN.paceRangeStr(pace) : "—";
+    const hrStr = step.paceKey === "easy" || step.paceKey === "long" || step.paceKey === "recovery"
+      ? "Z2 (108-126)"
+      : step.paceKey === "tempo" || step.paceKey === "marathon"
+      ? "Z3 (126-144)"
+      : step.paceKey === "intervals"
+      ? "Z4 (144-162)"
+      : "—";
+    const distStr = step.distance >= 1 ? `${step.distance.toFixed(1)} km` : `${(step.distance * 1000).toFixed(0)} m`;
+    let html = `
+      <div class="watch-step">
+        <div class="watch-step-head">
+          <span class="watch-step-num">${i + 1}</span>
+          <span class="watch-step-name">${step.name}</span>
+          <span class="watch-step-dist">${distStr}${step.repeat ? ` × ${step.repeat}` : ""}</span>
+        </div>
+        <div class="watch-step-meta">pace ${paceStr} · HR ${hrStr}</div>
+        ${step.note ? `<div class="watch-step-note">💡 ${step.note}</div>` : ""}`;
+    if (step.rest) {
+      const rPace = paces[step.rest.paceKey];
+      html += `<div class="watch-step-rest">↺ Rest med ponovitvami: ${(step.rest.distance * 1000).toFixed(0)} m @ ${PLAN.paceRangeStr(rPace)} ${step.rest.note ? "(" + step.rest.note + ")" : ""}</div>`;
+    }
+    html += "</div>";
+    return html;
+  }).join("");
+
+  return `
+    <details class="watch-block" open>
+      <summary>📲 Apple Watch trening — ${steps.length} korakov</summary>
+      <div class="watch-steps">${stepRows}</div>
+      <div class="watch-tip">
+        <strong>Nastavi na uri:</strong> Workout app → Outdoor Run → ··· → Create Workout → Custom →
+        dodaj korake po vrsti. Vsak korak <em>by Distance</em> + opcijsko <em>Pace Alert</em>
+        ali <em>HR Alert</em>. Pred štartom: izberi ta custom workout.
+      </div>
+    </details>
+  `;
 }
 
 function closeLogModal() {
