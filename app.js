@@ -59,7 +59,7 @@ function currentWeekFromToday() {
 function weekFromDate(dateStr) {
   const diff = daysBetween(PLAN.CONFIG.startDate, dateStr);
   if (diff < 0) return 0;
-  return Math.min(20, Math.floor(diff / 7) + 1);
+  return Math.min(PLAN.CONFIG.totalWeeks, Math.floor(diff / 7) + 1);
 }
 
 // === INIT ===
@@ -93,6 +93,19 @@ async function init() {
   }
 
   await refreshFullPlan();
+
+  // One-shot auto-link history (npr. iz Apple Health seed) v planirane seje.
+  // Pretežno koristno za W1 (Transition) kjer je uporabnik že tekel pred plan startom.
+  try {
+    const linked = await autoLinkHistoryToPlan();
+    if (linked > 0) {
+      console.log(`[autolink] linked ${linked} runs from history to plan sessions`);
+      Sync.scheduleSyncPush();
+    }
+  } catch (e) {
+    console.warn("Auto-link failed:", e.message);
+  }
+
   await refreshCompleted();
   state.currentWeek = currentWeekFromToday();
   bindUI();
@@ -123,6 +136,49 @@ async function refreshFullPlan() {
   state.fullPlan = PLAN.generateFullPlan(state.paces, state.maxHr);
 }
 
+// Za vsako sejo v planu poišče history zapis na istem datumu in ga zveže
+// kot 'completed'. Idempotentno: že linkane seje preskoči.
+// Vrne število novo linkanih.
+async function autoLinkHistoryToPlan() {
+  const history = await Store.getAll("history");
+  const completed = await Store.getAll("completed");
+  if (history.length === 0) return 0;
+
+  const completedByDate = {};
+  for (const c of completed) {
+    if (c.sessionId) completedByDate[c.sessionId] = c;
+  }
+
+  const histByDate = {};
+  for (const h of history) histByDate[h.date] = h;
+
+  let linked = 0;
+  for (const s of state.fullPlan.sessions) {
+    if (completedByDate[s.id]) continue; // že linkana
+    const h = histByDate[s.date];
+    if (!h) continue;
+    const entry = {
+      sessionId: s.id,
+      date: s.date,
+      week: s.week,
+      type: s.type,
+      km: h.km,
+      durationSec: h.durationSec,
+      avgHr: h.avgHr || null,
+      maxHr: h.maxHr || null,
+      rpe: null,
+      feel: null,
+      notes: "Auto-linkano iz Apple Health zgodovine",
+      skipped: false,
+      autoLinked: true,
+      loggedAt: new Date().toISOString(),
+    };
+    await Store.add("completed", entry);
+    linked++;
+  }
+  return linked;
+}
+
 async function refreshCompleted() {
   const all = await Store.getAll("completed");
   state.completedBySessionId = {};
@@ -150,7 +206,7 @@ function renderWeek() {
   const wkData = state.fullPlan.weeks.find(x => x.week === w);
   const wkSessions = state.fullPlan.sessions.filter(s => s.week === w);
 
-  $("#weekLabel").textContent = `Teden ${w}/20 · ${wkData.phase}`;
+  $("#weekLabel").textContent = `Teden ${w}/${PLAN.CONFIG.totalWeeks} · ${wkData.phase}`;
   const totalKm = wkSessions.reduce((sum, s) => sum + s.km, 0);
   const dateRange = `${fmtDate(wkSessions[0].date)} – ${fmtDate(wkSessions[wkSessions.length - 1].date)}`;
   $("#weekMeta").textContent = `${dateRange} · ${totalKm.toFixed(0)} km plan`;
@@ -675,7 +731,7 @@ function bindUI() {
     if (state.currentWeek > 1) { state.currentWeek--; renderWeek(); }
   });
   $("#nextWeek").addEventListener("click", () => {
-    if (state.currentWeek < 20) { state.currentWeek++; renderWeek(); }
+    if (state.currentWeek < PLAN.CONFIG.totalWeeks) { state.currentWeek++; renderWeek(); }
   });
 
   // FAB: dodaj ad-hoc tek
@@ -786,8 +842,11 @@ function bindUI() {
       await Store.del("settings", "paces");
       await loadSettings();
       await refreshFullPlan();
+      const linked = await autoLinkHistoryToPlan();
+      await refreshCompleted();
+      Sync.scheduleSyncPush();
       renderHeader(); renderWeek(); renderStats(); renderSettings();
-      alert("Seed naložen.");
+      alert(`Seed naložen.${linked > 0 ? "\n\nAuto-linkano " + linked + " tekov v plan seje (videti boš ✓ pri pretečenih dnevih)." : ""}`);
     } catch (err) {
       alert("Napaka: " + err.message);
     }

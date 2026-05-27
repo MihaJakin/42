@@ -1,13 +1,13 @@
 // Marathon Training Plan Generator
-// 20-week plan, race day: 2026-10-18 (Sun, week 20 day 7)
-// Start: 2026-06-01 (Mon, week 1)
+// 21-week plan, race day: 2026-10-18 (Sun, week 21 day 7)
+// Start: 2026-05-25 (Mon, week 1 = Transition)
 // Designed for sub-4:00 marathon goal based on HM 1:44 (4:53/km)
 
 const PLAN_CONFIG = {
-  startDate: "2026-06-01",        // Mon, W1 day 1
-  raceDate:  "2026-10-18",        // Sun, W20 day 7
+  startDate: "2026-05-25",        // Mon, W1 day 1 (ta teden)
+  raceDate:  "2026-10-18",        // Sun, W21 day 7
   goalMarathonTime: 4 * 3600,     // sec → 3:59:59 target = 4 hours
-  totalWeeks: 20,
+  totalWeeks: 21,
 };
 
 // Pace zones (sec/km). Derived from goal: MP = 5:41/km = 341 s/km
@@ -49,127 +49,134 @@ const TYPES = {
   RACE:      { code: "race",      label: "MARATON",    color: "#dc2626", paceKey: "marathon",  hrZ: "z3" },
 };
 
-// Glavni skeleton — 20 tednov, po dnevih (1=Pon, 7=Ned)
+// Glavni skeleton — 21 tednov, po dnevih (1=Pon, 7=Ned)
 // Vsak teden je definiran kot { phase, weekKm, longKm, sessions: { dow: {type, km, desc} } }
 function buildPlanSkeleton() {
   return [
-    // ───────── FAZA 1: RECOVERY / BAZA (W1-W5) — easy fokus, 3 sej / teden ─────────
-    { week: 1, phase: "Recovery", weekKm: 28, sessions: {
+    // ───────── FAZA 0: TRANSITION (W1) — usklajen z dejansko opravljenimi teki ─────────
+    { week: 1, phase: "Transition", weekKm: 24, sessions: {
+        1: { type: "EASY", km: 8,  desc: "Lahkoten tek — vrnitev v ritem po polmaratonu. Conversational pace." },
+        2: { type: "EASY", km: 8,  desc: "Lahkoten tek. Fokus na sproščeno biomehaniko, kadenco ~165+." },
+        7: { type: "LONG", km: 12, desc: "Dolgi tek easy. Brez intenzivnosti. Mostiček med okrevanjem in trening blokom." },
+    }},
+
+    // ───────── FAZA 1: RECOVERY / BAZA (W2-W6) — easy fokus, 3 sej / teden ─────────
+    { week: 2, phase: "Recovery", weekKm: 28, sessions: {
         2: { type: "EASY", km: 7,  desc: "Lahkoten tek — pravi 'conversational' pace. Po polmaratonu se baza popravlja." },
         4: { type: "EASY", km: 8,  desc: "Steady easy. Če noge utrujene, podaljšaj počitek." },
         7: { type: "LONG", km: 13, desc: "Dolgi tek — počasi. Brez intenzivnosti. Cilj: čas na nogah." },
     }},
-    { week: 2, phase: "Recovery", weekKm: 30, sessions: {
+    { week: 3, phase: "Recovery", weekKm: 30, sessions: {
         2: { type: "EASY", km: 7,  desc: "Easy + 4×20 s strides na koncu (4:00-4:20/km, full recovery med stridei)." },
         4: { type: "EASY", km: 9,  desc: "Easy. Fokus na kadenco 170-175 spm." },
         7: { type: "LONG", km: 14, desc: "Dolgi tek easy. Vodo s sabo, vsakih 4-5 km požirek." },
     }},
-    { week: 3, phase: "Recovery", weekKm: 32, sessions: {
+    { week: 4, phase: "Recovery", weekKm: 32, sessions: {
         2: { type: "EASY", km: 8,  desc: "Easy + 6×20 s strides na koncu." },
         4: { type: "EASY", km: 9,  desc: "Steady easy." },
         7: { type: "LONG", km: 15, desc: "Dolgi tek. Prva ura easy, zadnjih 15-20 min lahko nekaj hitreje (steady, ne tempo)." },
     }},
-    { week: 4, phase: "Recovery", weekKm: 27, sessions: {
+    { week: 5, phase: "Recovery", weekKm: 27, sessions: {
         2: { type: "EASY", km: 7,  desc: "Lahki teden — telo se prilagaja. Easy + 4 strides." },
         4: { type: "RECOVERY", km: 6, desc: "Recovery pace — super lahkotno (6:30-7:00/km). Cilj: aktivno okrevanje." },
         7: { type: "LONG", km: 14, desc: "Dolgi tek easy." },
     }},
-    { week: 5, phase: "Recovery", weekKm: 33, sessions: {
+    { week: 6, phase: "Recovery", weekKm: 33, sessions: {
         2: { type: "EASY", km: 8,  desc: "Easy + 6 strides." },
         4: { type: "EASY", km: 10, desc: "Steady easy — daljši mid-week run za adaptacijo." },
         7: { type: "LONG", km: 15, desc: "Dolgi tek. Drugi polčas malo pospeši (5:45-6:00/km zadnjih 5 km)." },
     }},
 
-    // ───────── FAZA 2: BUILD 1 (W6-W10) — uvajanje kvalitete, 3-4 sej ─────────
-    { week: 6, phase: "Build 1", weekKm: 35, sessions: {
+    // ───────── FAZA 2: BUILD 1 (W7-W11) — uvajanje kvalitete, 3-4 sej ─────────
+    { week: 7, phase: "Build 1", weekKm: 35, sessions: {
         2: { type: "EASY", km: 8,  desc: "Easy + 6 strides." },
         4: { type: "TEMPO", km: 10, desc: "Tempo: 2 km warm + 4 km @ tempo (4:50-5:05/km) + 2 km cool + 2 km easy. Prvi tempo — ne pretiravaj." },
         7: { type: "LONG", km: 16, desc: "Dolgi tek easy." },
     }},
-    { week: 7, phase: "Build 1", weekKm: 38, sessions: {
+    { week: 8, phase: "Build 1", weekKm: 38, sessions: {
         2: { type: "EASY", km: 8,  desc: "Easy + 6 strides." },
         4: { type: "TEMPO", km: 11, desc: "Tempo: 2 km wu + 2×2,5 km tempo (4:50-5:05/km) z 90 s odm. + 2 km cool." },
         6: { type: "EASY", km: 6,  desc: "Opcijski lahkoten 4. trening — preskoči če utrujen." },
         7: { type: "LONG", km: 17, desc: "Dolgi tek easy." },
     }},
-    { week: 8, phase: "Build 1", weekKm: 41, sessions: {
+    { week: 9, phase: "Build 1", weekKm: 41, sessions: {
         2: { type: "EASY", km: 8,  desc: "Easy." },
         4: { type: "MP", km: 11, desc: "MP run: 2 km wu + 6 km @ MP (5:30-5:45/km) + 3 km cool. Občuti maratonski pace." },
         6: { type: "EASY", km: 7,  desc: "Easy ali izpusti." },
         7: { type: "LONG", km: 19, desc: "Dolgi tek easy. Glikogen test — brez gela, samo voda." },
     }},
-    { week: 9, phase: "Build 1", weekKm: 32, sessions: {
+    { week: 10, phase: "Build 1", weekKm: 32, sessions: {
         // Cutback teden — manj volumna
         2: { type: "EASY", km: 7,  desc: "Easy + 6 strides." },
         4: { type: "INTERVALS", km: 9, desc: "Intervali: 2 km wu + 5×800 m @ 4:30-4:45/km z 2 min joga odm. + 2 km cool. Prvi intervali — kontrola." },
         7: { type: "LONG", km: 16, desc: "Dolgi tek easy (cutback)." },
     }},
-    { week: 10, phase: "Build 1", weekKm: 43, sessions: {
+    { week: 11, phase: "Build 1", weekKm: 43, sessions: {
         2: { type: "EASY", km: 8,  desc: "Easy." },
         4: { type: "TEMPO", km: 12, desc: "Tempo: 2 km wu + 6 km @ tempo (4:55/km) + 2 km cool + 2 km easy." },
         6: { type: "EASY", km: 6,  desc: "Lahkoten." },
         7: { type: "LONG", km: 21, desc: "Dolgi tek easy. Preverjevalni — če uspe brez težav, gremo v Build 2." },
     }},
 
-    // ───────── FAZA 3: BUILD 2 (W11-W14) — marathon specific, 4 sej ─────────
-    { week: 11, phase: "Build 2", weekKm: 45, sessions: {
+    // ───────── FAZA 3: BUILD 2 (W12-W15) — marathon specific, 4 sej ─────────
+    { week: 12, phase: "Build 2", weekKm: 45, sessions: {
         2: { type: "EASY", km: 8,  desc: "Easy + 6 strides." },
         4: { type: "MP", km: 12, desc: "MP: 2 km wu + 8 km @ MP (5:35/km) + 2 km cool. Konsistenten pace celih 8 km." },
         6: { type: "EASY", km: 7,  desc: "Easy/recovery." },
         7: { type: "LONG", km: 22, desc: "Dolgi tek: prvih 18 km easy, zadnjih 4 km @ MP. Vzemi 1-2 gela." },
     }},
-    { week: 12, phase: "Build 2", weekKm: 49, sessions: {
+    { week: 13, phase: "Build 2", weekKm: 49, sessions: {
         2: { type: "EASY", km: 8,  desc: "Easy." },
         4: { type: "INTERVALS", km: 11, desc: "Intervali: 2 km wu + 6×1 km @ 4:30-4:40/km z 2 min joga odm. + 2 km cool." },
         6: { type: "EASY", km: 7,  desc: "Easy." },
         7: { type: "LONG", km: 24, desc: "Dolgi tek easy. Testiraj prehranjevanje (gel vsakih 30-40 min)." },
     }},
-    { week: 13, phase: "Build 2", weekKm: 42, sessions: {
+    { week: 14, phase: "Build 2", weekKm: 42, sessions: {
         // Cutback teden
         2: { type: "EASY", km: 8,  desc: "Easy + 6 strides." },
         4: { type: "TEMPO", km: 12, desc: "Tempo: 2 km wu + 2×4 km @ tempo z 3 min jog + 2 km cool." },
         7: { type: "LONG", km: 20, desc: "Dolgi tek easy (cutback). Aktivna regeneracija." },
     }},
-    { week: 14, phase: "Build 2", weekKm: 52, sessions: {
+    { week: 15, phase: "Build 2", weekKm: 52, sessions: {
         2: { type: "EASY", km: 9,  desc: "Easy + strides." },
         4: { type: "MP", km: 14, desc: "MP: 2 km wu + 10 km @ MP (5:35/km) + 2 km cool. Glavni MP block — disciplina pace-a." },
         6: { type: "EASY", km: 7,  desc: "Easy." },
         7: { type: "LONG", km: 26, desc: "Dolgi tek: 22 km easy + 4 km @ MP. Preizkus prehrane in opreme." },
     }},
 
-    // ───────── FAZA 4: PEAK (W15-W17) — najvišji volumen ─────────
-    { week: 15, phase: "Peak", weekKm: 55, sessions: {
+    // ───────── FAZA 4: PEAK (W16-W18) — najvišji volumen ─────────
+    { week: 16, phase: "Peak", weekKm: 55, sessions: {
         2: { type: "EASY", km: 9,  desc: "Easy + 6 strides." },
         4: { type: "INTERVALS", km: 12, desc: "K (Yasso 800): 2 km wu + 8×800 m @ 4:20-4:35/km z 2 min jog + 2 km cool. Klasični Yasso." },
         6: { type: "EASY", km: 7,  desc: "Easy ali recovery." },
         7: { type: "LONG", km: 28, desc: "Dolgi tek: 24 km easy + 4 km @ MP. Najdaljši doslej — telo se uči." },
     }},
-    { week: 16, phase: "Peak", weekKm: 58, sessions: {
+    { week: 17, phase: "Peak", weekKm: 58, sessions: {
         2: { type: "EASY", km: 9,  desc: "Easy." },
         4: { type: "MP", km: 14, desc: "MP: 2 km wu + 10 km @ MP (5:35/km) + 2 km cool. Zadnji veliki MP." },
         6: { type: "EASY", km: 7,  desc: "Easy." },
         7: { type: "LONG", km: 30, desc: "Dolgi tek: 25 km easy + 5 km @ MP. PEAK long run. Trening za zid pri 30 km." },
     }},
-    { week: 17, phase: "Peak", weekKm: 48, sessions: {
+    { week: 18, phase: "Peak", weekKm: 48, sessions: {
         // Cutback peak
         2: { type: "EASY", km: 8,  desc: "Easy + 6 strides." },
         4: { type: "TEMPO", km: 12, desc: "Tempo: 2 km wu + 6 km @ tempo + 4 km easy. Lažji od običajnega tempa." },
         7: { type: "LONG", km: 24, desc: "Dolgi tek easy. Cutback peak — pripravi telo za taper." },
     }},
 
-    // ───────── FAZA 5: TAPER (W18-W20) — zmanjšaj volumen, ohrani ostrino ─────────
-    { week: 18, phase: "Taper", weekKm: 40, sessions: {
+    // ───────── FAZA 5: TAPER (W19-W21) — zmanjšaj volumen, ohrani ostrino ─────────
+    { week: 19, phase: "Taper", weekKm: 40, sessions: {
         2: { type: "EASY", km: 8,  desc: "Easy + 6 strides." },
         4: { type: "MP", km: 11, desc: "MP: 2 km wu + 6 km @ MP + 3 km cool. Krajši ampak ostrina." },
         6: { type: "EASY", km: 6,  desc: "Easy." },
         7: { type: "LONG", km: 18, desc: "Skrajšan long: 14 km easy + 4 km @ MP. Taper začetek." },
     }},
-    { week: 19, phase: "Taper", weekKm: 28, sessions: {
+    { week: 20, phase: "Taper", weekKm: 28, sessions: {
         2: { type: "EASY", km: 7,  desc: "Easy + 6 strides." },
         4: { type: "TEMPO", km: 8, desc: "Tempo: 2 km wu + 3 km @ tempo + 3 km cool. Kratki, oster trening." },
         7: { type: "LONG", km: 13, desc: "Mid-long easy. Vse manj." },
     }},
-    { week: 20, phase: "Race Week", weekKm: 18, sessions: {
+    { week: 21, phase: "Race Week", weekKm: 18, sessions: {
         2: { type: "EASY", km: 5, desc: "Lahkoten + 4 strides. Razmigaj noge." },
         4: { type: "EASY", km: 4, desc: "Zelo lahkoten 'shake-out'. 3-4 min @ MP samo da telo spomni." },
         6: { type: "RECOVERY", km: 3, desc: "Pre-race jog 20 min. Več počitka, hidracija, ogljikovi hidrati." },
