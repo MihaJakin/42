@@ -62,6 +62,15 @@ function weekFromDate(dateStr) {
   return Math.min(PLAN.CONFIG.totalWeeks, Math.floor(diff / 7) + 1);
 }
 
+// Koledarske meje tedna (Pon–Ned), izračunane iz startDate — NE iz planiranih sej.
+// Pomembno: večina tednov nima ponedeljkove seje, zato bi meje iz sej izpustile
+// ad-hoc teke na ponedeljek (oz. pred prvo planirano sejo v tednu).
+function weekBounds(weekNum) {
+  const start = PLAN.addDays(PLAN.CONFIG.startDate, (weekNum - 1) * 7);
+  const end = PLAN.addDays(PLAN.CONFIG.startDate, (weekNum - 1) * 7 + 6);
+  return { start, end };
+}
+
 // === INIT ===
 async function init() {
   // Sync status hook za UI
@@ -230,7 +239,8 @@ async function renderWeek() {
 
   $("#weekLabel").textContent = `Teden ${w}/${PLAN.CONFIG.totalWeeks} · ${wkData.phase}`;
   const totalKm = wkSessions.reduce((sum, s) => sum + s.km, 0);
-  const dateRange = `${fmtDate(wkSessions[0].date)} – ${fmtDate(wkSessions[wkSessions.length - 1].date)}`;
+  const { start: wkStart, end: wkEnd } = weekBounds(w);
+  const dateRange = `${fmtDate(wkStart)} – ${fmtDate(wkEnd)}`;
 
   // Volume indicator: izračunaj dejansko opravljeno (planned + adhoc + history avtolinkano)
   let actualKm = 0;
@@ -238,9 +248,7 @@ async function renderWeek() {
     const c = state.completedBySessionId[s.id];
     if (c && !c.skipped) actualKm += c.km;
   }
-  // Plus ad-hoc teki znotraj tedenskega range
-  const wkStart = wkSessions[0].date;
-  const wkEnd = wkSessions[wkSessions.length - 1].date;
+  // Plus ad-hoc teki znotraj tedenskega range (cel teden Pon–Ned)
   for (const a of (state.adhocRuns || [])) {
     if (a.date >= wkStart && a.date <= wkEnd) actualKm += a.km;
   }
@@ -371,10 +379,7 @@ function renderAdhocForWeek(weekNum) {
   if (!list) return;
   list.innerHTML = "";
 
-  const wkSessions = state.fullPlan.sessions.filter(s => s.week === weekNum);
-  if (!wkSessions.length) return;
-  const weekStart = wkSessions[0].date;
-  const weekEnd   = wkSessions[wkSessions.length - 1].date;
+  const { start: weekStart, end: weekEnd } = weekBounds(weekNum);
 
   const adhoc = (state.adhocRuns || []).filter(r => r.date >= weekStart && r.date <= weekEnd);
 
